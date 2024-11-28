@@ -39,37 +39,47 @@ async def send_telegram_message(message):
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
 
-# Function to extract and log the item and day details after a successful claim or failure
-def itemInformation(driver, account_email, server_name):
+def item_information(driver, account_email, server_name):
     try:
-        # Wait for the claimed item and day to be visible (adjust CSS selector if necessary)
-        claimed_day = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.grayscale > div.reward-point"))
+        # Wait for the LOGIN COUNT element and extract the text (e.g., "LOGIN COUNT: 2 DAYS")
+        login_count_text = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "/html/body/section/div/div/div[2]/h5"))
         ).text
-        
-        claimed_item = driver.find_element(By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.grayscale > div.reward-name").text
 
-        # Construct the result message with Markdown formatting
+        # Parse the login count (extract the number of days)
+        login_days = int(login_count_text.split(":")[1].split()[0])
+
+        # Build dynamic CSS selectors based on login_days
+        # For example: day 1 -> nth-child(1), day 2 -> nth-child(2), ..., day 31 -> nth-child(31)
+        claimed_day_selector = f"#xexchange > div:nth-child({login_days}) > div.reward-point"
+        claimed_item_selector = f"#xexchange > div:nth-child({login_days}) > div.reward-name"
+
+        # Extract the claimed day and item using the dynamic selectors
+        claimed_day = driver.find_element(By.CSS_SELECTOR, claimed_day_selector).text
+        claimed_item = driver.find_element(By.CSS_SELECTOR, claimed_item_selector).text
+
+        # Construct the result message with improved Markdown formatting and aligned colons
         result_message = f"""
-*Claimed Details:*
+        *CLAIM DETAILS*
 
-*Claimed On:* {claimed_day}
-*Item:* {claimed_item}
+━━━━━━━━━━━━━━━━━━━━━━━━
 
-- - -
+➤ *Claimed   :* {claimed_day}
+➤ *Item          :* {claimed_item}
 
-*Email:* {account_email}
-*Server:* {server_name}
-        """
+━━━━━━━━━━━━━━━━━━━━━━━━
 
-        # Get the current event loop for the current thread, or create a new one if it doesn't exist
+*Server     :* {server_name}
+*Email       :* {account_email}
+"""
+
+
+        # Send the message asynchronously to Telegram
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            # If a loop is already running (in case of multiple threads), use a background task
-            loop.create_task(send_telegram_message(result_message))
+            loop.create_task(send_telegram_message(result_message))  # Use background task if loop is running
         else:
-            # If no loop is running, create a new one
-            loop.run_until_complete(send_telegram_message(result_message))
+            loop.run_until_complete(send_telegram_message(result_message))  # Run if no loop exists
 
         # Log the details with colors in the console
         logger.info(f"\n-----------------------------------")
@@ -117,16 +127,70 @@ def claim_item_for_account(account):
         login_submit_button = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(3) > button")
         login_submit_button.click()
 
-        time.sleep(5)  # Wait for the main page to load
+        time.sleep(20)
+
+        # Try to click the item icon (Claim button)
+        try:
+            logger.info("Attempting to click active item.")
+            claim_button = driver.find_element(By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.reward-star")
+
+            # If the button is disabled, it means the item has already been claimed
+            if not claim_button.is_enabled():
+                logger.info("Already Claimed! Claim back tomorrow!")
+                item_information(driver, account['email'], account['server_name'])  # Pass both email and server_name
+                driver.quit()  # Exit early if already claimed
+                return  # Skip to the next account
+
+            # If the button is enabled, proceed with claiming
+            claim_button.click()
+            logger.info("Waiting 5 seconds to load.")
+            time.sleep(5)
+
+            # Call itemInformation after successfully claiming the item
+            item_information(driver, account['email'], account['server_name'])  # Pass both email and server_name
+
+        except Exception as e:
+            # Only log the "Already Claimed!" message, suppress the actual error
+            logger.info("Already Claimed! Claim back tomorrow!")
+            item_information(driver, account['email'], account['server_name'])  # Pass both email and server_name
+            driver.quit()  # Exit early if the item can't be claimed
+            return  # Skip to the next account
+
+
+        # Choose server - custom server selection by server name
+        logger.info(f"Choosing server for account {account['email']}.")
+
+        server_name = account['server_name']  # Get the server name for this account
+
+        # Find the select dropdown element
+        server_select = driver.find_element(By.CSS_SELECTOR, "#form-server > fieldset > div:nth-child(1) > select")
+        
+        # Find all option elements in the select dropdown
+        options = server_select.find_elements(By.TAG_NAME, "option")
+
+        # Loop through each option and select the one that matches the server name
+        for option in options:
+            if option.text == server_name or option.get_attribute("data-server") == server_name:
+                logger.info(f"Selecting {server_name}.")
+                option.click()
+                break
+
+        # Click Submit
+        driver.find_element(By.CSS_SELECTOR, "#form-server-btnSubmit").click()
+
+        # Handle the browser pop-up alert (OK/Cancel)
+        alert = WebDriverWait(driver, 10).until(EC.alert_is_present())
+        alert.accept()  # Accept the alert (Click OK)
+
+        logger.info(f"Daily login task completed successfully for {account['email']}!")
 
         # Extract the item and day details after the claim
-        itemInformation(driver, account['email'], account['server_name'])
+        item_information(driver, account['email'])
 
         driver.quit()  # Close the browser after completing the task
 
     except Exception as e:
         logger.error(f"Error during automation: {e}")
-
 
 # Run the automation for all accounts sequentially (one by one)
 def main():
