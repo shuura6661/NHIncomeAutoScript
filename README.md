@@ -60,7 +60,7 @@ pip install -r requirements.txt
 
 ## 🖼️ Screenshots
 <p align="center">
-  <img src="assets/telebotMessage.png" alt="Script Running Example" width="600px">
+  <img src="assets/telebotMessage.png" alt="Script Running Example" width="300px">
   <br>
   <i>Example of the script running successfully.</i>
 </p>
