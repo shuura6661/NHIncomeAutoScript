@@ -37,7 +37,7 @@ pip install -r requirements.txt
    cd NHIncomeAutoScript
    ```
 
-2. Add your credentials to the configuration file (`config.json`):
+2. Add your credentials to the code:
    ```json
    {
        "email": "your_email@gmail.com",
@@ -107,7 +107,7 @@ We welcome contributions to enhance this project! Here's how you can contribute:
 
 For questions, suggestions, or feedback, feel free to contact us:
 - **GitHub**: [@shuura6661](https://github.com/shuura6661)
-- **Email**: shuura6661@example.com (if applicable)
+- **Email**: briannoname1999@gmail.com
 
 ---
 
