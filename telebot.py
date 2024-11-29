@@ -1,6 +1,5 @@
-import time
-import logging
 import os
+import logging
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -25,6 +24,19 @@ CHAT_ID = '5977807502'  # Replace with your chat ID (you can get this from a bot
 # Create a bot instance directly without Request
 bot = Bot(token=API_TOKEN)
 
+# Load accounts from environment variables
+def load_accounts():
+    accounts = []
+    for i in range(1, 3):  # Assuming you have two accounts (EMAIL1, PASSWORD1, SERVER NAME-1)
+        account = {
+            "email": os.getenv(f'EMAIL{i}'),
+            "password": os.getenv(f'PASSWORD{i}'),
+            "server_name": os.getenv(f'SERVER_NAME{i}')
+        }
+        if account["email"] and account["password"] and account["server_name"]:
+            accounts.append(account)
+    return accounts
+
 # Function to send a message to Telegram asynchronously
 async def send_telegram_message(message):
     try:
@@ -33,39 +45,21 @@ async def send_telegram_message(message):
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
 
-# Function to get account details from environment variables
-def get_account_details(account_index):
-    account_prefix = f"ACCOUNT_{account_index}_"
-    email = os.getenv(f"{account_prefix}EMAIL")
-    password = os.getenv(f"{account_prefix}PASSWORD")
-    server_name = os.getenv(f"{account_prefix}SERVER_NAME")
 
-    if email and password and server_name:
-        return {"email": email, "password": password, "server_name": server_name}
-    else:
-        logger.error(f"Missing details for account {account_index}")
-        return None
-
-# Function to extract item information
 def item_information(driver, account_email, server_name):
     try:
-        # Wait for the LOGIN COUNT element and extract the text (e.g., "LOGIN COUNT: 2 DAYS")
         login_count_text = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.XPATH, "/html/body/section/div/div/div[2]/h5"))
         ).text
 
-        # Parse the login count (extract the number of days)
         login_days = int(login_count_text.split(":")[1].split()[0])
 
-        # Build dynamic CSS selectors based on login_days
         claimed_day_selector = f"#xexchange > div:nth-child({login_days}) > div.reward-point"
         claimed_item_selector = f"#xexchange > div:nth-child({login_days}) > div.reward-name"
 
-        # Extract the claimed day and item using the dynamic selectors
         claimed_day = driver.find_element(By.CSS_SELECTOR, claimed_day_selector).text
         claimed_item = driver.find_element(By.CSS_SELECTOR, claimed_item_selector).text
 
-        # Construct the result message with improved Markdown formatting and aligned colons
         result_message = f"""
         *CLAIM DETAILS*
 
@@ -80,7 +74,6 @@ def item_information(driver, account_email, server_name):
 *Email       :* {account_email}
 """
 
-        # Send the message asynchronously to Telegram
         loop = asyncio.get_event_loop()
         if loop.is_running():
             loop.create_task(send_telegram_message(result_message))
@@ -95,7 +88,7 @@ def item_information(driver, account_email, server_name):
     except Exception as e:
         logger.error(f"Error while extracting item information: {e}")
 
-# Function to perform login and claim item for each account
+
 def claim_item_for_account(account):
     try:
         logger.info(f"Starting automation for account: {account['email']}")
@@ -160,15 +153,15 @@ def claim_item_for_account(account):
     except Exception as e:
         logger.error(f"Error during automation: {e}")
 
-# Run the automation for all accounts sequentially
+
 def main():
-    # Load accounts from GitHub secrets
-    for i in range(1, 6):  # assuming you have 5 accounts, change this as needed
-        account = get_account_details(i)
-        if account:
-            claim_item_for_account(account)
-        else:
-            logger.error(f"Skipping account {i} due to missing details")
+    accounts = load_accounts()
+    if not accounts:
+        logger.error("No accounts found. Please check your GitHub Secrets.")
+        return
+    for account in accounts:
+        claim_item_for_account(account)
+
 
 if __name__ == "__main__":
     main()
