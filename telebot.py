@@ -98,7 +98,7 @@ def claim_item_for_account(account):
         #options.add_argument("--headless")  # Uncomment for headless mode
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")  # Added to handle restricted environments
-        driver = webdriver.Chrome(options=options)
+        driver = webdriver.Chrome(executable_path="D:\Games\Ninja Heroes\Ninja Income Auto Script\chromedriver-win32", options=options)
 
         driver.get("https://kageherostudio.com/event/?event=daily")
         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
