@@ -31,4 +31,4 @@ jobs:
           SERVER_NAME1: ${{ secrets.SERVER_NAME1 }}
           SERVER_NAME2: ${{ secrets.SERVER_NAME2 }}
         run: |
-          python script.py
+          python telebot.py
