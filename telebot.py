@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -94,12 +95,15 @@ def claim_item_for_account(account):
 
         options = webdriver.ChromeOptions()
         options.add_argument("--disable-notifications")
-        options.add_argument("--disable-popup-blocking")
-        #options.add_argument("--headless")  # Uncomment for headless mode
+        options.add_argument("--headless")  # Uncomment for headless mode
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")  # Added to handle restricted environments
-        driver = webdriver.Chrome(executable_path=r"D:\Games\Ninja Heroes\Ninja Income Auto Script\chromedriver-win32", options=options)
 
+        # Path to chromedriver
+        service = Service(executable_path=r"D:\Games\Ninja Heroes\Ninja Income Auto Script\chromedriver-win32")
+
+        # Initialize the WebDriver with the Service object
+        driver = webdriver.Chrome(service=service, options=options)
 
         driver.get("https://kageherostudio.com/event/?event=daily")
         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
@@ -157,7 +161,6 @@ def claim_item_for_account(account):
 
     except Exception as e:
         logger.error(f"Error during automation: {e}")
-
 
 
 def main():
