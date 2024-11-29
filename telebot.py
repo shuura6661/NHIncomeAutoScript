@@ -103,7 +103,7 @@ def claim_item_for_account(account):
         service = Service(executable_path=r"D:\Games\Ninja Heroes\Ninja Income Auto Script\chromedriver-win32")
 
         # Initialize the WebDriver with the Service object
-        driver = webdriver.Chrome(service=service, options=options)
+        driver = webdriver.Chrome('/path/to/chromedriver', options=options)
 
         driver.get("https://kageherostudio.com/event/?event=daily")
         WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
