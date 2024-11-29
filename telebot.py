@@ -95,7 +95,7 @@ def claim_item_for_account(account):
         options = webdriver.ChromeOptions()
         options.add_argument("--disable-notifications")
         options.add_argument("--disable-popup-blocking")
-        options.add_argument("--headless")  # Uncomment for headless mode
+        #options.add_argument("--headless")  # Uncomment for headless mode
         options.add_argument("--disable-gpu")
         options.add_argument("--no-sandbox")  # Added to handle restricted environments
         driver = webdriver.Chrome(options=options)
