@@ -46,7 +46,6 @@ async def send_telegram_message(message):
     except Exception as e:
         logger.error(f"Failed to send message: {e}")
 
-
 def item_information(driver, account_email, server_name):
     try:
         login_count_text = WebDriverWait(driver, 10).until(
@@ -89,7 +88,6 @@ def item_information(driver, account_email, server_name):
     except Exception as e:
         logger.error(f"Error while extracting item information: {e}")
 
-
 def claim_item_for_account(account):
     try:
         logger.info(f"Starting automation for account: {account['email']}")
@@ -102,7 +100,7 @@ def claim_item_for_account(account):
         driver = webdriver.Chrome(options=options)
 
         driver.get("https://kageherostudio.com/event/?event=daily")
-        time.sleep(5)
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
 
         login_button = driver.find_element(By.CLASS_NAME, "btn-login")
         login_button.click()
@@ -118,10 +116,12 @@ def claim_item_for_account(account):
         login_submit_button = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(3) > button")
         login_submit_button.click()
 
-        time.sleep(20)
+        time.sleep(10)
 
         try:
-            claim_button = driver.find_element(By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.reward-star")
+            claim_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.reward-star"))
+            )
             if not claim_button.is_enabled():
                 logger.info("Already Claimed! Claim back tomorrow!")
                 item_information(driver, account['email'], account['server_name'])
@@ -154,7 +154,6 @@ def claim_item_for_account(account):
     except Exception as e:
         logger.error(f"Error during automation: {e}")
 
-
 def main():
     accounts = load_accounts()
     if not accounts:
@@ -162,7 +161,6 @@ def main():
         return
     for account in accounts:
         claim_item_for_account(account)
-
 
 if __name__ == "__main__":
     main()
