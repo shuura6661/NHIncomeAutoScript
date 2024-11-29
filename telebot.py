@@ -95,13 +95,15 @@ def claim_item_for_account(account):
         options = webdriver.ChromeOptions()
         options.add_argument("--disable-notifications")
         options.add_argument("--disable-popup-blocking")
-        options.add_argument("--headless")
+        # Remove headless mode for debugging
+        # options.add_argument("--headless")
         options.add_argument("--disable-gpu")
         driver = webdriver.Chrome(options=options)
 
         driver.get("https://kageherostudio.com/event/?event=daily")
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
+        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
 
+        logger.info("Login button located, proceeding with login.")
         login_button = driver.find_element(By.CLASS_NAME, "btn-login")
         login_button.click()
 
@@ -122,6 +124,7 @@ def claim_item_for_account(account):
             claim_button = WebDriverWait(driver, 10).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.reward-star"))
             )
+            logger.info("Claim button found and clicked.")
             if not claim_button.is_enabled():
                 logger.info("Already Claimed! Claim back tomorrow!")
                 item_information(driver, account['email'], account['server_name'])
@@ -153,6 +156,7 @@ def claim_item_for_account(account):
 
     except Exception as e:
         logger.error(f"Error during automation: {e}")
+
 
 def main():
     accounts = load_accounts()
