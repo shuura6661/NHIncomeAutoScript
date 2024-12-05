@@ -20,8 +20,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger()
 
 # Your Telegram Bot API token
-API_TOKEN = '8154101977:AAFFUrg36NxCH9GcSx7xQoHmZ99TJpTqmEQ'  # Replace with your bot's API token
-CHAT_ID = '5977807502'  # Replace with your chat ID (you can get this from a bot like @userinfobot)
+API_TOKEN = ''  # Replace with your bot's API token
+CHAT_ID = ''  # Replace with your chat ID (you can get this from a bot like @userinfobot)
 
 # Create a bot instance directly without Request
 bot = Bot(token=API_TOKEN)
