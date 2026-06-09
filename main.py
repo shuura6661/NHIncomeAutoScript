@@ -1,115 +1,101 @@
-from selenium import webdriver
-from selenium.webdriver.common.by import By
+import os
 import time
 import logging
-import os
-from termcolor import colored  # For adding color to console output
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
-# Suppress TensorFlow logs to reduce clutter (only errors will be shown)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# Suppress urllib3 warnings (they're not critical for this script)
-logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-
-# Configure logging to include timestamps and log levels for better traceability
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
-# List of account credentials (email and password) along with server names
-accounts = [
-    {"email": "@gmail.com", "password": "", "server_name": ""},
-    {"email": "@gmail.com", "password": "!", "server_name": ""}
-]
+DAILY_URL = "https://kageherostudio.com/event/?event=daily"
 
-# Function to extract and log the item and day details after a successful claim or failure
-def itemInformation():
-    try:
-        # Attempt to locate the elements for claimed item and day on the page (adjust CSS selectors as needed)
-        claimed_day = driver.find_element(By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.grayscale > div.reward-point").text
-        claimed_item = driver.find_element(By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.grayscale > div.reward-name").text
 
-        # Log the extracted details in a colorful and clear format
-        logger.info(colored(f"\n-----------------------------------", "cyan"))
-        logger.info(colored(f"Claimed on: {claimed_day}", "yellow"))
-        logger.info(colored(f"Item: {claimed_item}", "green"))
-        logger.info(colored(f"-----------------------------------", "cyan"))
+def load_accounts():
+    """EMAIL1/PASSWORD1/SERVER_NAME1, EMAIL2/... from env (GitHub Secrets-friendly)."""
+    accounts, i = [], 1
+    while os.getenv(f"EMAIL{i}"):
+        email = os.getenv(f"EMAIL{i}")
+        pw = os.getenv(f"PASSWORD{i}")
+        srv = os.getenv(f"SERVER_NAME{i}")
+        if pw and srv:
+            accounts.append({"email": email, "password": pw, "server_name": srv})
+        i += 1
+    return accounts
 
-    except Exception as e:
-        # Log any errors that occur while extracting the item details
-        logger.error(colored(f"Error while extracting item information: {e}", "red"))
 
-# Loop through the list of accounts and process each one
-for account in accounts:
-    try:
-        # Start a new browser session for each account and log the start
-        logger.info(colored(f"\nStarting automation for account: {account['email']}", "magenta"))
+def build_driver():
+    o = webdriver.ChromeOptions()
+    o.add_argument("--headless=new")
+    o.add_argument("--disable-gpu")
+    o.add_argument("--no-sandbox")
+    o.add_argument("--disable-dev-shm-usage")
+    o.add_argument("--disable-notifications")
+    o.add_argument("--window-size=1366,900")
+    return webdriver.Chrome(options=o)  # Selenium 4.8 auto-manages the driver
 
-        # Set up the Chrome WebDriver with specific options (headless mode, notifications off, etc.)
-        options = webdriver.ChromeOptions()
-        options.add_argument("--disable-notifications")  # Disable browser notifications
-        options.add_argument("--disable-popup-blocking")  # Disable popups
-        options.add_argument("--headless")  # Run in headless mode to avoid GUI
-        options.add_argument("--disable-gpu")  # Necessary for headless mode on certain systems
-        driver = webdriver.Chrome(options=options)
 
-        # Step 1: Open the website for the daily event
-        driver.get("https://kageherostudio.com/event/?event=daily")
-        time.sleep(5)  # Wait for the page to load
+def login(driver, wait, email, password):
+    driver.get(DAILY_URL)
+    wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn-login"))).click()
+    wait.until(EC.visibility_of_element_located(
+        (By.CSS_SELECTOR, 'input[name="txtuserid"]'))).send_keys(email)
+    driver.find_element(By.CSS_SELECTOR, 'input[name="txtpassword"]').send_keys(password)
+    driver.find_element(By.CSS_SELECTOR, "#form-login-btnSubmit").click()
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#xexchange .dailyClaim")))
 
-        # Step 2: Click the login button on the page
-        logger.info(colored("Clicking the LOGIN button...", "blue"))
-        login_button = driver.find_element(By.CLASS_NAME, "btn-login")
-        login_button.click()
 
-        # Step 3: Wait for the login modal to appear
-        time.sleep(5)
+def claim(driver, wait, server_name):
+    cards = driver.find_elements(
+        By.CSS_SELECTOR, "#xexchange .dailyClaim.reward-star:not(.grayscale)")
+    if not cards:
+        logger.warning("No claimable reward (already claimed/locked). Back tomorrow.")
+        return False
 
-        # Step 4: Fill in the login credentials (email and password)
-        logger.info(f"Entering email: {account['email']}.")
-        email_field = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(1) > input")
-        email_field.send_keys(account['email'])
+    card = cards[0]
+    item = card.get_attribute("data-name")
+    logger.info(f"Claimable item: {item}")
 
-        logger.info(f"Entering password for {account['email']}.")
-        password_field = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(2) > input")
-        password_field.send_keys(account['password'])
+    # Site fires a native confirm() before the final claim AJAX -> auto-accept it
+    driver.execute_script("window.confirm = function(){ return true; };")
+    card.click()  # opens #ServerForm modal
 
-        # Step 5: Submit the login form to authenticate
-        logger.info(colored("Submitting the Login Form...", "blue"))
-        submit_button = driver.find_element(By.CSS_SELECTOR, "#form-login-btnSubmit")
-        submit_button.click()
+    select_el = wait.until(EC.visibility_of_element_located(
+        (By.CSS_SELECTOR, 'select[name="selserver"]')))
+    sel = Select(select_el)
+    if not any(o.text.strip() == server_name.strip() for o in sel.options):
+        logger.error(f"Server '{server_name}' not found. "
+                     f"Available: {[o.text.strip() for o in sel.options]}")
+        return False
+    sel.select_by_visible_text(server_name.strip())
 
-        logger.info("Waiting 20 seconds for the page to load after login.")
-        time.sleep(20)
+    driver.find_element(By.CSS_SELECTOR, "#form-server-btnSubmit").click()
+    time.sleep(5)  # AJAX act=daily -> success + reload
+    logger.info(f"Claim submitted: '{item}' on '{server_name}'.")
+    return True
 
-        # Step 6: Attempt to claim the daily item (button click)
+
+def main():
+    accounts = load_accounts()
+    if not accounts:
+        logger.error("No accounts. Set EMAIL1/PASSWORD1/SERVER_NAME1 env vars.")
+        return
+    for acc in accounts:
+        driver = build_driver()
+        wait = WebDriverWait(driver, 25)
         try:
-            logger.info("Attempting to claim the item...")
-            claim_button = driver.find_element(By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.reward-star")
-
-            # Check if the button is enabled or already disabled (item already claimed)
-            if not claim_button.is_enabled():  # Button is disabled if already claimed
-                logger.warning(colored("Already claimed! Claim back tomorrow.", "yellow"))
-                itemInformation()  # Log the item information in case of already claimed
-                driver.quit()  # Close the browser session early
-                continue  # Skip to the next account
-
-            # If the button is enabled, click to claim the item
-            claim_button.click()
-            logger.info("Waiting 5 seconds to load the claim result...")
-            time.sleep(5)
-
-            # Call itemInformation after successfully claiming the item
-            itemInformation()
-
+            logger.info(f"Processing {acc['email']}")
+            login(driver, wait, acc["email"], acc["password"])
+            claim(driver, wait, acc["server_name"])
+        except TimeoutException as e:
+            logger.error(f"Timeout for {acc['email']}: {e}")
         except Exception as e:
-            # Log warning if there's an error (item already claimed or another issue)
-            logger.warning(colored("Already claimed or an error occurred.", "yellow"))
-            itemInformation()  # Log item details even on failure
-
+            logger.error(f"Error for {acc['email']}: {e}")
         finally:
-            # Ensure the browser session is closed after processing each account
             driver.quit()
 
-    except Exception as e:
-        # Log any errors that occur while processing the account
-        logger.error(colored(f"Error processing account {account['email']}: {e}", "red"))
+
+if __name__ == "__main__":
+    main()

@@ -1,175 +1,156 @@
-import time
 import os
+import time
 import logging
-import asyncio
+import requests
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from telegram import Bot
+from selenium.common.exceptions import TimeoutException
 
-# Suppress TensorFlow logs (only errors will be shown)
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# Suppress urllib3 warnings
-logging.getLogger("urllib3").setLevel(logging.CRITICAL)
-
-# Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
-# Your Telegram Bot API token
-API_TOKEN = ''  # Replace with your bot's API token
-CHAT_ID = ''  # Replace with your chat ID (you can get this from a bot like @userinfobot)
+DAILY_URL = "https://kageherostudio.com/event/?event=daily"
 
-# Create a bot instance directly without Request
-bot = Bot(token=API_TOKEN)
+# Telegram config from env (GitHub Secrets friendly) -- never hardcode tokens
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 
-# Load accounts from environment variables
+
+def send_telegram_message(message: str) -> None:
+    """Fire-and-forget Telegram notify via HTTP API (sync, no event loop)."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.warning("Telegram token/chat_id not set; skipping notification.")
+        return
+    try:
+        resp = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            data={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"},
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            logger.info("Telegram notification sent.")
+        else:
+            logger.error(f"Telegram send failed [{resp.status_code}]: {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"Telegram send error: {e}")
+
+
 def load_accounts():
-    accounts = []
-    for i in range(1, 3):  # Assuming you have two accounts (EMAIL1, PASSWORD1, SERVER NAME-1)
-        account = {
-            "email": os.getenv(f'EMAIL{i}'),
-            "password": os.getenv(f'PASSWORD{i}'),
-            "server_name": os.getenv(f'SERVER_NAME{i}')
-        }
-        if account["email"] and account["password"] and account["server_name"]:
-            accounts.append(account)
+    """Auto-detect EMAIL1/PASSWORD1/SERVER_NAME1, EMAIL2/... from env."""
+    accounts, i = [], 1
+    while os.getenv(f"EMAIL{i}"):
+        pw = os.getenv(f"PASSWORD{i}")
+        srv = os.getenv(f"SERVER_NAME{i}")
+        if pw and srv:
+            accounts.append({
+                "email": os.getenv(f"EMAIL{i}"),
+                "password": pw,
+                "server_name": srv,
+            })
+        i += 1
     return accounts
 
-# Function to send a message to Telegram asynchronously
-async def send_telegram_message(message):
+
+def build_driver():
+    o = webdriver.ChromeOptions()
+    o.add_argument("--headless=new")
+    o.add_argument("--disable-gpu")
+    o.add_argument("--no-sandbox")
+    o.add_argument("--disable-dev-shm-usage")
+    o.add_argument("--disable-notifications")
+    o.add_argument("--window-size=1366,900")
+    return webdriver.Chrome(options=o)  # Selenium 4.8 auto-manages chromedriver
+
+
+def login(driver, wait, email, password):
+    driver.get(DAILY_URL)
+    wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".btn-login"))).click()
+    wait.until(EC.visibility_of_element_located(
+        (By.CSS_SELECTOR, 'input[name="txtuserid"]'))).send_keys(email)
+    driver.find_element(By.CSS_SELECTOR, 'input[name="txtpassword"]').send_keys(password)
+    driver.find_element(By.CSS_SELECTOR, "#form-login-btnSubmit").click()
+    # logged-in DOM renders the reward grid
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#xexchange .dailyClaim")))
+
+
+def claim(driver, wait, server_name):
+    cards = driver.find_elements(
+        By.CSS_SELECTOR, "#xexchange .dailyClaim.reward-star:not(.grayscale)")
+    if not cards:
+        return {"status": "already_claimed", "item": None}
+
+    card = cards[0]
+    item = card.get_attribute("data-name")
+
+    # Site shows a native confirm() before the final claim AJAX -- auto-accept it
+    driver.execute_script("window.confirm = function(){ return true; };")
+    card.click()  # opens the #ServerForm modal
+
+    select_el = wait.until(EC.visibility_of_element_located(
+        (By.CSS_SELECTOR, 'select[name="selserver"]')))
+    sel = Select(select_el)
+    available = [o.text.strip() for o in sel.options]
+    if server_name.strip() not in available:
+        return {"status": "server_not_found", "item": item, "available": available}
+    sel.select_by_visible_text(server_name.strip())
+
+    driver.find_element(By.CSS_SELECTOR, "#form-server-btnSubmit").click()
+    time.sleep(5)  # AJAX act=daily -> success + page reload
+    return {"status": "claimed", "item": item}
+
+
+def notify(acc, result):
+    status = result["status"]
+    item = result.get("item")
+    if status == "claimed":
+        msg = (
+            "*CLAIM DETAILS*\n"
+            "----------------------------\n"
+            f"Item    : {item}\n"
+            f"Server  : {acc['server_name']}\n"
+            f"Email   : {acc['email']}\n"
+            "----------------------------"
+        )
+    elif status == "already_claimed":
+        msg = (f"ALREADY CLAIMED\nAccount: {acc['email']}\nCome back tomorrow~")
+    elif status == "server_not_found":
+        msg = ("SERVER NOT FOUND\n"
+               f"Account: {acc['email']}\n"
+               f"Expected: {acc['server_name']}\n"
+               f"Available: {', '.join(result.get('available', []))}")
+    else:
+        msg = f"Unknown status for {acc['email']}: {status}"
+    logger.info(msg)
+    send_telegram_message(msg)
+
+
+def process_account(acc):
+    driver = build_driver()
+    wait = WebDriverWait(driver, 25)
     try:
-        await bot.send_message(chat_id=CHAT_ID, text=message, parse_mode="Markdown")
-        logger.info("Message sent to Telegram.")
+        logger.info(f"Processing {acc['email']}")
+        login(driver, wait, acc["email"], acc["password"])
+        notify(acc, claim(driver, wait, acc["server_name"]))
+    except TimeoutException as e:
+        logger.error(f"Timeout for {acc['email']}: {e}")
+        send_telegram_message(f"Timeout for {acc['email']} -- site slow or layout changed.")
     except Exception as e:
-        logger.error(f"Failed to send message: {e}")
-
-def item_information(driver, account_email, server_name):
-    try:
-        login_count_text = WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/section/div/div/div[2]/h5"))
-        ).text
-
-        login_days = int(login_count_text.split(":")[1].split()[0])
-
-        claimed_day_selector = f"#xexchange > div:nth-child({login_days}) > div.reward-point"
-        claimed_item_selector = f"#xexchange > div:nth-child({login_days}) > div.reward-name"
-
-        claimed_day = driver.find_element(By.CSS_SELECTOR, claimed_day_selector).text
-        claimed_item = driver.find_element(By.CSS_SELECTOR, claimed_item_selector).text
-
-        result_message = f"""
-        *CLAIM DETAILS*
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-
-➤ *Claimed   :* {claimed_day}
-➤ *Item           :* {claimed_item}
-
-━━━━━━━━━━━━━━━━━━━━━━━━
-
-*Server     :* {server_name}
-*Email       :* {account_email}
-"""
-
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(send_telegram_message(result_message))
-        else:
-            loop.run_until_complete(send_telegram_message(result_message))
-
-        logger.info(f"\n-----------------------------------")
-        logger.info(f"Claimed on: {claimed_day}")
-        logger.info(f"Item: {claimed_item}")
-        logger.info(f"-----------------------------------")
-
-    except Exception as e:
-        logger.error(f"Error while extracting item information: {e}")
-
-def claim_item_for_account(account):
-    try:
-        logger.info(f"Starting automation for account: {account['email']}")
-
-        options = webdriver.ChromeOptions()
-        options.add_argument("--disable-notifications")
-        options.add_argument("--headless")  # Uncomment for headless mode
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")  # Added to handle restricted environments
-
-        # Path to chromedriver
-        service = Service(executable_path=r"D:\Games\Ninja Heroes\Ninja Income Auto Script\chromedriver-win32")
-
-        # Initialize the WebDriver with the Service object
-        driver = webdriver.Chrome('/path/to/chromedriver', options=options)
-
-        driver.get("https://kageherostudio.com/event/?event=daily")
-        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "btn-login")))
-
-        logger.info("Login button located, proceeding with login.")
-        login_button = driver.find_element(By.CLASS_NAME, "btn-login")
-        login_button.click()
-
-        time.sleep(5)
-
-        email_field = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(1) > input")
-        email_field.send_keys(account['email'])
-
-        password_field = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(2) > input")
-        password_field.send_keys(account['password'])
-
-        login_submit_button = driver.find_element(By.CSS_SELECTOR, "#form-login > fieldset > div:nth-child(3) > button")
-        login_submit_button.click()
-
-        time.sleep(10)
-
-        try:
-            claim_button = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "#xexchange > div.reward-content.dailyClaim.reward-star"))
-            )
-            logger.info("Claim button found and clicked.")
-            if not claim_button.is_enabled():
-                logger.info("Already Claimed! Claim back tomorrow!")
-                item_information(driver, account['email'], account['server_name'])
-                driver.quit()
-                return
-            claim_button.click()
-            time.sleep(5)
-            item_information(driver, account['email'], account['server_name'])
-
-        except Exception as e:
-            logger.info("Already Claimed! Claim back tomorrow!")
-            item_information(driver, account['email'], account['server_name'])
-            driver.quit()
-            return
-
-        server_select = driver.find_element(By.CSS_SELECTOR, "#form-server > fieldset > div:nth-child(1) > select")
-        options = server_select.find_elements(By.TAG_NAME, "option")
-        for option in options:
-            if option.text == account['server_name']:
-                option.click()
-                break
-
-        driver.find_element(By.CSS_SELECTOR, "#form-server-btnSubmit").click()
-        alert = WebDriverWait(driver, 10).until(EC.alert_is_present())
-        alert.accept()
-
-        logger.info(f"Daily login task completed successfully for {account['email']}!")
+        logger.error(f"Error for {acc['email']}: {e}")
+        send_telegram_message(f"Error for {acc['email']}: {str(e)[:200]}")
+    finally:
         driver.quit()
-
-    except Exception as e:
-        logger.error(f"Error during automation: {e}")
 
 
 def main():
     accounts = load_accounts()
     if not accounts:
-        logger.error("No accounts found. Please check your GitHub Secrets.")
+        logger.error("No accounts. Set EMAIL1/PASSWORD1/SERVER_NAME1 (+ TELEGRAM_*) env vars.")
         return
-    for account in accounts:
-        claim_item_for_account(account)
+    for acc in accounts:
+        process_account(acc)
+
 
 if __name__ == "__main__":
     main()
