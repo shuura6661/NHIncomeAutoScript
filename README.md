@@ -1,87 +1,111 @@
 # 🌟 NHIncomeAutoScript 🌟
 
-Effortlessly claim your Ninja Income in the **Ninja Heroes** mobile game with this automated script!  
-Say goodbye to manual work and let the script handle your income collection for you.
+Automatically claim your daily **Ninja Income** reward on the
+[Ninja Heroes New Era](https://kageherostudio.com/event/?event=daily) event site.
+A Selenium bot logs in, claims the day's item, and (optionally) notifies you on Telegram.
 
 ---
 
 ## 📋 Features
 
-- 🛠 **Automated Income Claiming**: Automatically collect your Ninja Income with precision.
-- ⚡ **Fast and Reliable**: Designed to work efficiently without interruptions.
-- 🎮 **For Ninja Heroes Fans**: Tailored for players of the Ninja Heroes mobile game.
-- 🔒 **Secure**: Keeps your credentials safe by using a secure configuration.
-- 🔧 **Customizable**: Adjust settings, server names, or other configurations as needed.
+- 🛠 **Automated daily claim** — logs in and claims the Ninja Income reward
+- 🤖 **Telegram notifications** — optional claim/error reports via a bot
+- 👥 **Multi-account** — claim for several accounts in one run
+- 🔒 **Credentials via environment variables** — nothing hardcoded in source
+- ⏰ **Schedulable** — run via cron or GitHub Actions
+
+---
+
+## ⚙️ How it works
+
+The script drives headless Chrome to the daily event page, logs in with your
+account, and clicks the current claimable reward (skipping days already claimed
+or locked). `telebot.py` additionally posts the result to a Telegram chat.
+
+Two entry points:
+- **`main.py`** — runs the claim and logs results to the console.
+- **`telebot.py`** — runs the claim and sends a Telegram notification (recommended for scheduled runs).
 
 ---
 
 ## 🚀 Getting Started
 
-Follow these steps to set up and use the script:
-
 ### Prerequisites
-- Ensure **Python 3.7+** is installed on your system.
-- Required Python packages:
-  - `requests` - Handles HTTP requests.
-  - `beautifulsoup4` - Parses HTML data from the game.
+- **Python 3.8+**
+- **Google Chrome** installed (Selenium Manager auto-fetches the matching chromedriver)
+- Python packages:
+  ```bash
+  pip install -r requirements.txt
+  ```
+  (`selenium`, `requests`, `termcolor`)
 
-Install them using:
+### Configuration (environment variables)
+Credentials are read from env vars — never hardcoded. For each account use a
+numbered suffix (`1`, `2`, …):
+
+| Variable | Description |
+|---|---|
+| `EMAIL1` | Account email |
+| `PASSWORD1` | Account password |
+| `SERVER_NAME1` | Exact server name, e.g. `Server 35 - SolomonKent [Lv. 3]` |
+| `TELEGRAM_BOT_TOKEN` | (telebot.py) Bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_CHAT_ID` | (telebot.py) Your chat ID |
+
+A convenient local pattern is a `.env` file (already git-ignored):
 ```bash
-pip install -r requirements.txt
+export EMAIL1="you@example.com"
+export PASSWORD1='your_password'
+export SERVER_NAME1="Server 35 - SolomonKent [Lv. 3]"
+export TELEGRAM_BOT_TOKEN="123456:ABC..."
+export TELEGRAM_CHAT_ID="987654321"
 ```
+Then: `set -a; source .env; set +a`
 
-### Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/shuura6661/NHIncomeAutoScript.git
-   cd NHIncomeAutoScript
-   ```
+> ⚠️ Never commit `.env` or real credentials. They are git-ignored by default.
 
-2. Add your credentials to the code:
-   ```json
-   {
-       "email": "your_email@gmail.com",
-       "password": "your_password",
-       "server_name": "your_server"
-   }
-   ```
-   - Replace `your_email@gmail.com`, `your_password`, and `your_server` with your Ninja Heroes login details.
-   - Ensure the file is securely saved and not shared publicly.
-
-3. Run the script:
-   ```bash
-   python main.py
-   ```
-
-4. Monitor the output:
-   - The script will log its progress in the console, including successful claims.
+### Run
+```bash
+python main.py      # console output
+python telebot.py   # console output + Telegram notification
+```
 
 ---
 
 ## 🖼️ Screenshots
 <p align="center">
-  <img src="assets/telebotMessage.png" alt="Script Running Example" width="300px">
+  <img src="assets/telebotMessage.png" alt="Telegram notification example" width="300px">
   <br>
-  <i>Example of the script running successfully.</i>
+  <i>Example Telegram notification after a successful claim.</i>
 </p>
+
+---
+
+## ⏰ Scheduling
+
+### Option A — Local cron (recommended)
+A daily cron on a machine with a **residential IP**:
+```bash
+30 7 * * * /path/to/run.sh   # wrapper that sources .env and runs telebot.py
+```
+
+### Option B — GitHub Actions
+A workflow (`.github/workflows/main.yml`) is included. Add your env values as
+**repository secrets** (Settings → Secrets and variables → Actions).
+
+> ⚠️ **Heads-up on Cloudflare:** the event site is protected by Cloudflare's
+> bot challenge, which tends to **block datacenter IPs** — including GitHub
+> Actions runners. Scheduled runs from a cloud/datacenter IP may fail the
+> security check. Running from a **residential IP** (e.g. a home/office machine)
+> reliably passes. Choose your runner accordingly.
 
 ---
 
 ## 🛠 Troubleshooting
 
-### Common Issues
-1. **Authentication Failed**:
-   - Double-check your credentials in `config.json`.
-   - Ensure you have internet access.
-   
-2. **Dependencies Missing**:
-   - Make sure all required Python packages are installed:
-     ```bash
-     pip install -r requirements.txt
-     ```
-
-3. **Unexpected Errors**:
-   - Run the script in debug mode (if implemented) or check for typos.
+- **Login times out / "Just a moment…" page** → Cloudflare challenged the IP. Run from a residential connection (see above).
+- **`element not interactable`** → ensure you're on the latest version (the login wait was fixed).
+- **`chromedriver` not found** → upgrade Selenium (`pip install -U selenium`); Selenium Manager handles the driver automatically.
+- **No Telegram message** → confirm `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are set, and that you've sent your bot a message first.
 
 ---
 
