@@ -1,2 +1,18 @@
-# Ignore the accounts JSON file
+# Secrets / credentials — NEVER commit these
+.env
+.env.*
 accounts.json
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+nh_venv/
+
+# Runtime artifacts (local only)
+diagnostics/
+*.log
+run.sh
