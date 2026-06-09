@@ -111,22 +111,24 @@ def notify(acc, result):
     item = result.get("item")
     if status == "claimed":
         msg = (
-            "*CLAIM DETAILS*\n"
-            "----------------------------\n"
-            f"Item    : {item}\n"
-            f"Server  : {acc['server_name']}\n"
-            f"Email   : {acc['email']}\n"
-            "----------------------------"
+            "🎉 *CLAIM SUCCESS* 🎉\n"
+            "➖➖➖➖➖➖➖➖➖➖➖\n"
+            f"🎁 *Item:* {item}\n"
+            f"🌐 *Server:* {acc['server_name']}\n"
+            f"📧 *Account:* {acc['email']}\n"
+            "➖➖➖➖➖➖➖➖➖➖➖"
         )
     elif status == "already_claimed":
-        msg = (f"ALREADY CLAIMED\nAccount: {acc['email']}\nCome back tomorrow~")
+        msg = (f"✅ *ALREADY CLAIMED*\n"
+               f"📧 *Account:* {acc['email']}\n"
+               f"😴 Come back tomorrow~")
     elif status == "server_not_found":
-        msg = ("SERVER NOT FOUND\n"
-               f"Account: {acc['email']}\n"
-               f"Expected: {acc['server_name']}\n"
-               f"Available: {', '.join(result.get('available', []))}")
+        msg = ("⚠️ *SERVER NOT FOUND*\n"
+               f"📧 *Account:* {acc['email']}\n"
+               f"🎯 *Expected:* {acc['server_name']}\n"
+               f"📋 *Available:* {', '.join(result.get('available', []))}")
     else:
-        msg = f"Unknown status for {acc['email']}: {status}"
+        msg = f"❓ *Unknown status* for {acc['email']}: {status}"
     logger.info(msg)
     send_telegram_message(msg)
 
