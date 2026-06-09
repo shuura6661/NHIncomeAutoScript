@@ -126,7 +126,33 @@ def notify(acc, result):
     send_telegram_message(msg)
 
 
-def process_account(acc):
+def dump_diagnostics(driver, label):
+    """On failure, capture page state for debugging (workflow log + artifacts).
+
+    NOTE: page_source never contains password field values. Logged body text is
+    capped and is the challenge/block page, not credentials.
+    """
+    try:
+        url = driver.current_url
+        title = driver.title
+        body = ""
+        try:
+            body = driver.find_element(By.TAG_NAME, "body").text[:600]
+        except Exception:
+            pass
+        logger.error(f"[DIAG {label}] url={url} | title={title!r}")
+        logger.error(f"[DIAG {label}] body_snippet={body!r}")
+        os.makedirs("diagnostics", exist_ok=True)
+        safe = "".join(c if c.isalnum() else "_" for c in label)[:40]
+        with open(f"diagnostics/{safe}.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        driver.save_screenshot(f"diagnostics/{safe}.png")
+        logger.info(f"[DIAG {label}] saved diagnostics/{safe}.html and .png")
+    except Exception as e:
+        logger.error(f"[DIAG {label}] failed to capture diagnostics: {e}")
+
+
+def process_account(acc, idx):
     driver = build_driver()
     wait = WebDriverWait(driver, 25)
     try:
@@ -135,9 +161,11 @@ def process_account(acc):
         notify(acc, claim(driver, wait, acc["server_name"]))
     except TimeoutException as e:
         logger.error(f"Timeout for {acc['email']}: {e}")
+        dump_diagnostics(driver, f"account{idx}_timeout")
         send_telegram_message(f"Timeout for {acc['email']} -- site slow or layout changed.")
     except Exception as e:
         logger.error(f"Error for {acc['email']}: {e}")
+        dump_diagnostics(driver, f"account{idx}_error")
         send_telegram_message(f"Error for {acc['email']}: {str(e)[:200]}")
     finally:
         driver.quit()
@@ -148,8 +176,8 @@ def main():
     if not accounts:
         logger.error("No accounts. Set EMAIL1/PASSWORD1/SERVER_NAME1 (+ TELEGRAM_*) env vars.")
         return
-    for acc in accounts:
-        process_account(acc)
+    for idx, acc in enumerate(accounts, start=1):
+        process_account(acc, idx)
 
 
 if __name__ == "__main__":

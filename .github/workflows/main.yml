@@ -34,3 +34,12 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python telebot.py
+
+      - name: Upload failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: selenium-diagnostics
+          path: diagnostics/
+          if-no-files-found: ignore
+          retention-days: 5
