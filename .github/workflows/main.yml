@@ -30,5 +30,7 @@ jobs:
           PASSWORD2: ${{ secrets.PASSWORD2 }}
           SERVER_NAME1: ${{ secrets.SERVER_NAME1 }}
           SERVER_NAME2: ${{ secrets.SERVER_NAME2 }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python telebot.py
