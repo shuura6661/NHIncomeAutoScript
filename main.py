@@ -44,7 +44,13 @@ def login(driver, wait, email, password):
         (By.CSS_SELECTOR, 'input[name="txtuserid"]'))).send_keys(email)
     driver.find_element(By.CSS_SELECTOR, 'input[name="txtpassword"]').send_keys(password)
     driver.find_element(By.CSS_SELECTOR, "#form-login-btnSubmit").click()
-    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "#xexchange .dailyClaim")))
+    # Wait for the AUTHENTICATED state. The reward grid exists even when logged
+    # out, so keying off it returns instantly and races ahead of the login modal
+    # (the backdrop then intercepts reward clicks -> "element not interactable").
+    # The site shows a "Logout" link only once authenticated; also wait for the
+    # modal backdrop to clear so reward cards become interactable.
+    wait.until(lambda d: "logout" in d.find_element(By.TAG_NAME, "body").text.lower())
+    wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".modal-backdrop")))
 
 
 def claim(driver, wait, server_name):
